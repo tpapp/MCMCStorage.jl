@@ -1,6 +1,46 @@
 using MCMCStorage, Test
-using MCMCStorage.StanCSV:  parse_variable_name, collapse_contiguous_dimensions,
-    parse_schema, read_chain, chain_id_files
+
+using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
+   parse_schema, read_chain, chain_id_files
+
+####
+#### MCMCChains
+####
+
+@testset "schema, layout, views" begin
+    s = Chains.calculate_schema((a = (), b = (1, 2), c = (2, 3, 4)))
+    l = 1 + 2 + 2*3*4
+    @test Chains.is_valid_schema(s, l)
+    v = 1:l
+    m = reshape(v, 1, :)
+    @test view(v, s.a) == 1
+    @test view(v, s.b) == reshape(2:3, 1, 2)
+    @test view(v, s.c) == reshape(4:l, 2, 3, 4)
+    @test view(m, s.a) == [1]
+    @test view(m, s.b) == reshape(2:3, 1, 1, 2)
+    @test view(m, s.c) == reshape(4:l, 1, 2, 3, 4)
+end
+
+@testset "chains" begin
+    sample = Float64.(hcat(1:10, 2:2:20, 3:3:30))
+    sch = Chains.calculate_schema((a = (), b = (2, )))
+    chain = Chains.Chain(sch, sample; warmup = 3, is_ordered = true, thinning = 2)
+    @test Chains.sample_matrix(chain) == sample[4:end, :]
+    @test Chains.sample_matrix(chain, Val(true)) == sample
+    @test Chains.thinning(chain) == 2
+    @test Chains.warmup(chain) == 3
+    p = collect(Chains.posterior(chain))
+    @test p == [(f = Float64(i); (a = i, b = [2*i, 3*i])) for i in 4:10]
+    c2 = vcat(chain, chain)
+    @test Chains.sample_matrix(c2) == vcat(sample[4:end, :], sample[4:end, :])
+    @test Chains.warmup(c2) == 0
+    @test Chains.thinning(c2) == nothing
+end
+
+
+####
+#### StanCSV
+####
 
 @testset "variable name parsing" begin
     @test parse_variable_name("a") == (:a => ())
