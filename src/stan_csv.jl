@@ -8,7 +8,17 @@ export read_chain
 
 using ArgCheck: @argcheck
 using DocStringExtensions: SIGNATURES
+import ..Chains
 
+####
+#### Header parsing building blocks
+####
+
+"""
+$(SIGNATURES)
+
+Parse a Stan variable name as `name::Symbol => indexes::Tuple`.
+"""
 function parse_variable_name(variable_name::AbstractString)
     parts = split(variable_name, '.')
     @argcheck !isempty(first(parts))
@@ -17,6 +27,15 @@ function parse_variable_name(variable_name::AbstractString)
     name => index
 end
 
+"""
+$(SIGNATURES)
+
+Given a vector of `name => index` pairs and a starting index `i`, which should be `1`s, find
+the last index for this variable (ie the dimensions) and check that that intermediate
+indices are contiguous (in column major ordering).
+
+Return `name`, `dimensions`, and the position for the continuation.
+"""
 function collapse_contiguous_dimensions(names_indexes, i)
     name, index = names_indexes[i]
     @argcheck all(index .== 1) "Indexes for $(name) don't start with ones."
@@ -38,6 +57,11 @@ function collapse_contiguous_dimensions(names_indexes, i)
     name, dimensions, j
 end
 
+"""
+$(SIGNATURES)
+
+Parse a vector of `names => indexes` to a column schema.
+"""
 function parse_schema(names_indexes)
     n = length(names_indexes)
     i = 1
@@ -48,9 +72,19 @@ function parse_schema(names_indexes)
         push!(schema, name => dimensions)
         i = next_i
     end
-    schema
+    Chains.ColumnSchema(NamedTuple{Tuple(first.(schema))}(last.(schema)))
 end
 
+####
+#### CSV file reading.
+####
+
+"""
+$(SIGNATURES)
+
+Find the first non-comment line and read it as a `Chains.ColumnSchema`. When there is no
+such line, throw an `EOFError`.
+"""
 function read_schema(io::IO)
     while true                  # will throw an EOFError if not fount
         line = readline(io; keep = false)
@@ -60,26 +94,32 @@ function read_schema(io::IO)
     end
 end
 
-function read_csv_line!(buffers, io::IO, contiguous_lengths)
+"""
+$(SIGNATURES)
+
+Read `nfields` fields from `io`, parse as `Float64`, and push into `buffer`, returning
+`true`. Fewer fields than `nfields` results in an error.
+
+If a line starts with a `'#'`, do no parsing, return `false`.
+"""
+function read_csv_line!(buffer, io::IO, nfields::Integer)
     line = readline(io; keep = true) # treat \n as the last delimiter
     first(line) == '#' && return false
     pos = 1
-    lastpos = lastindex(line)
-    for (i, l) in enumerate(contiguous_lengths)
-        buffer = buffers[i]
-        for _ in 1:l
-            delim_pos = something(findnext(isequal(','), line, pos), lastpos)
-            push!(buffer, parse(Float64, SubString(line, pos, delim_pos - 1)))
-            pos = delim_pos + 1
-        end
+    last_pos = lastindex(line)
+    for _ in 1:nfields
+        @argcheck pos ≤ last_pos "Fewer than $(nfields) fields in line."
+        delim_pos = something(findnext(isequal(','), line, pos), last_pos)
+        push!(buffer, parse(Float64, SubString(line, pos, delim_pos - 1)))
+        pos = delim_pos + 1
     end
     true
 end
 
-function read_csv_flat_data!(buffers, io, contiguous_lengths)
+function read_csv_flat_data!(buffer, io, nfields)
     row_count = 0
     while !eof(io)
-        row_count += read_csv_line!(buffers, io, contiguous_lengths)
+        row_count += read_csv_line!(buffer, io, nfields)
     end
     row_count
 end
@@ -90,12 +130,12 @@ function csv_buffer_to_array(buffer, row_count, dims)
 end
 
 function read_chain(io::IO)
-    schema = read_schema(io)
-    contiguous_lengths = [prod(last(s)) for s in schema]
-    buffers = [Vector{Float64}() for _ in eachindex(contiguous_lengths)]
-    row_count = read_csv_flat_data!(buffers, io, contiguous_lengths)
-    [name => csv_buffer_to_array(buffer, row_count, dims)
-     for ((name, dims), buffer) in zip(schema, buffers)]
+    sch = read_schema(io)
+    nfields = length(sch)
+    buffer = Vector{Float64}()
+    row_count = read_csv_flat_data!(buffer, io, nfields)
+    sample_matrix = collect(permutedims(reshape(buffer, nfields, row_count)))
+    Chains.Chain(sch, sample_matrix)
 end
 
 """

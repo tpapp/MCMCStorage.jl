@@ -1,4 +1,4 @@
-using MCMCStorage, Test
+using MCMCStorage, Test, DocStringExtensions
 
 using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
    parse_schema, read_chain, chain_id_files
@@ -61,17 +61,22 @@ end
     @test_throws ArgumentError collapse_contiguous_dimensions(v[[1, 2, 4]], 1)
 end
 
-function make_parsed_header(name_size_pairs)
+"""
+$(SIGNATURES)
+
+Function that generates a vector of `name => index` pairs. For testing.
+"""
+function make_parsed_header(named_dims)
     v = Any[]
-    for (name, dims) in name_size_pairs
+    for (name, dims) in pairs(named_dims)
         append!(v, collect(name => Tuple(ix) for ix in CartesianIndices(dims)))
     end
     v
 end
 
 @testset "parsing schema" begin
-    v = [:a => (), :b => (1, 2), :c => (3, 4, 7), :d => ()]
-    @test parse_schema(make_parsed_header(v)) == v
+    nd = (a = (), b = (1, 2), c = (3, 4, 7), d = ())
+    @test parse_schema(make_parsed_header(nd)) == Chains.ColumnSchema(nd)
 end
 
 @testset "reading CSV data" begin
@@ -101,11 +106,13 @@ end
     contents = String(take!(io))
 
     # read test data
-    name_array_pairs = read_chain(IOBuffer(contents))
-    @test name_array_pairs[1] == (:a => Float64.(1:10))
-    @test name_array_pairs[2] == (:b => Float64.(hcat(2:11, 3:12)))
-    @test first(name_array_pairs[3]) == :c
-    c = last(name_array_pairs[3])
+    chain = read_chain(IOBuffer(contents))
+    sch = Chains.schema(chain)
+    @test sch == Chains.ColumnSchema((a = (), b = (2, ), c = (2, 2)))
+    s = Chains.sample_matrix(chain)
+    @test view(s, sch.a) == Float64.(1:10)
+    @test view(s, sch.b) == Float64.(hcat(2:11, 3:12))
+    c = view(s, sch.c)
     for i in 1:10
         @test c[i, :, :] == reshape(1:4, 2, 2) .+ 4.0 .+ i
     end
