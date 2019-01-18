@@ -8,22 +8,25 @@ using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
 ####
 
 @testset "schema, layout, views" begin
-    s = Chains.calculate_schema((a = (), b = (1, 2), c = (2, 3, 4)))
-    l = 1 + 2 + 2*3*4
-    @test Chains.is_valid_schema(s, l)
+    named_dims = (a = (), b = (1, 2), c = (2, 3, 4))
+    s = Chains.ColumnSchema(named_dims)
+    l = mapreduce(prod, +, named_dims)
+    @test length(s) == l
     v = 1:l
     m = reshape(v, 1, :)
     @test view(v, s.a) == 1
     @test view(v, s.b) == reshape(2:3, 1, 2)
     @test view(v, s.c) == reshape(4:l, 2, 3, 4)
+    @test view(v, s) == (a = view(v, s.a), b = view(v, s.b), c = view(v, s.c))
     @test view(m, s.a) == [1]
     @test view(m, s.b) == reshape(2:3, 1, 1, 2)
     @test view(m, s.c) == reshape(4:l, 1, 2, 3, 4)
+    @test view(m, s) == (a = view(m, s.a), b = view(m, s.b), c = view(m, s.c))
 end
 
 @testset "chains" begin
     sample = Float64.(hcat(1:10, 2:2:20, 3:3:30))
-    sch = Chains.calculate_schema((a = (), b = (2, )))
+    sch = Chains.ColumnSchema((a = (), b = (2, )))
     chain = Chains.Chain(sch, sample; warmup = 3, is_ordered = true, thinning = 2)
     @test Chains.sample_matrix(chain) == sample[4:end, :]
     @test Chains.sample_matrix(chain, Val(true)) == sample
@@ -36,7 +39,6 @@ end
     @test Chains.warmup(c2) == 0
     @test Chains.thinning(c2) == nothing
 end
-
 
 ####
 #### StanCSV

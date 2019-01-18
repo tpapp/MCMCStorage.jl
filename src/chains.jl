@@ -4,6 +4,10 @@ using ArgCheck: @argcheck
 using Parameters: @unpack
 using DocStringExtensions: FUNCTIONNAME, SIGNATURES
 
+####
+#### Column layouts
+####
+
 struct ColumnLayout{D <: Tuple{Vararg{Int}}}
     offset::Int
     len::Int
@@ -31,48 +35,73 @@ function Base.view(A::AbstractVector, layout::ColumnLayout)
 end
 
 """
+Type alias for a NamedTuple of array dimensions. Not exported.
+"""
+const NamedDims = NamedTuple{N,T} where {N,T<:Tuple{Vararg{Tuple{Vararg{Int}}}}}
+
+"""
 $(SIGNATURES)
 
-Calculate a schema from a collection (preferably a `NamedTuple`) of array sizes.
+Calculate column layouts from a `NamedTuple`) of array sizes.
 """
-function calculate_schema(multiple_dims)
+function _column_layouts(named_dims::NamedDims)
     acc = 0
-    map(multiple_dims) do dims
+    layouts = map(named_dims) do dims
         len = prod(dims)
         layout = ColumnLayout(acc, len, dims)
         acc += len
         layout
     end
+    layouts
 end
 
-"""
-$(SIGNATURES)
+####
+#### Column schema
+####
 
-Test if `schema` is valid, and has the given total length.
-"""
-function is_valid_schema(schema, total_len)
-    acc = 0
-    for layout in schema
-        layout.offset == acc || return false
-        acc += layout.len
+struct ColumnSchema{T}
+    layouts::T
+    function ColumnSchema(named_dims::NamedDims)
+        layouts = _column_layouts(named_dims)
+        new{typeof(layouts)}(layouts)
     end
-    acc == total_len
 end
 
-struct Chain{L <: NamedTuple, M <: Matrix}
-    schema::L
+layouts(cs::ColumnSchema) = getfield(cs, :layouts)
+
+Base.getproperty(cs::ColumnSchema, name::Symbol) = getfield(layouts(cs), name)
+
+Base.propertynames(cs::ColumnSchema) = propertynames(layouts(scs))
+
+function Base.length(cs::ColumnSchema)
+    last_layout = layouts(cs)[end]
+    last_layout.offset + last_layout.len
+end
+
+function Base.view(x::Union{AbstractVector, AbstractMatrix}, cs::ColumnSchema)
+    @argcheck !Base.has_offset_axes(x)
+    @argcheck length(cs) == size(x, ndims(x))
+    map(layout -> view(x, layout), layouts(cs))
+end
+
+####
+#### Chain
+####
+
+struct Chain{S <: ColumnSchema, M <: AbstractMatrix}
+    schema::S
     sample_matrix::M
     thinning::Int
     warmup::Int
     is_ordered::Bool
-    function Chain(schema::L, sample_matrix::M;
+    function Chain(schema::S, sample_matrix::M;
                    thinning::Int = 1, warmup::Int = 0,
-                   is_ordered::Bool = false) where {L <: NamedTuple, M <: Matrix}
-        @argcheck typeof(values(schema)) <: Tuple{Vararg{ColumnLayout}}
-        @argcheck is_valid_schema(schema, size(sample_matrix, 2))
+                   is_ordered::Bool = false) where {S <: ColumnSchema, M <: AbstractMatrix}
+        @argcheck !Base.has_offset_axes(sample_matrix)
+        @argcheck length(schema) == size(sample_matrix, 2)
         @argcheck thinning ≥ 1
         @argcheck warmup ≥ 0
-        new{L,M}(schema, sample_matrix, thinning, warmup, is_ordered)
+        new{S,M}(schema, sample_matrix, thinning, warmup, is_ordered)
     end
 end
 
@@ -135,7 +164,7 @@ Return a generator that returns named tuples from the posterior (not including t
 """
 function posterior(c::Chain)
     sch = schema(c)
-    (map(layout -> view(row, layout), sch) for row in eachrow(sample_matrix(c)))
+    (view(row, sch) for row in eachrow(sample_matrix(c)))
 end
 
 end
