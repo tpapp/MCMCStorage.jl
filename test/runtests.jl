@@ -1,7 +1,7 @@
 using MCMCStorage, Test, DocStringExtensions
 
 using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
-   parse_schema, read_chain, chain_id_files
+   parse_schema
 
 ####
 #### MCMCChains
@@ -81,7 +81,7 @@ end
 
 @testset "reading CSV data" begin
 
-    "Print `n` comment lines to `io`."
+    # Print `n` comment lines to `io`.
     function comment!(io::IO, n = 1)
         for _ in 1:n
             println(io, "# comment")
@@ -106,7 +106,7 @@ end
     contents = String(take!(io))
 
     # read test data
-    chain = read_chain(IOBuffer(contents))
+    chain = StanCSV.read_chain(IOBuffer(contents))
     sch = Chains.schema(chain)
     @test sch == Chains.ColumnSchema((a = (), b = (2, ), c = (2, 2)))
     s = Chains.sample_matrix(chain)
@@ -118,6 +118,15 @@ end
     end
 end
 
+@testset "corner cases" begin
+    @test_throws(ArgumentError("Fewer than 2 fields in line."),
+                 StanCSV.read_chain(IOBuffer("a,b\n1\n2\n")))
+    c1 = StanCSV.read_chain(IOBuffer("a,b\n1,2\n"))
+    c2 = Chains.Chain(Chains.ColumnSchema((a = (), b = ())), collect(reshape(1.0:2.0, 1, 2)))
+    @test Chains.schema(c1) == Chains.schema(c2)
+    @test Chains.sample_matrix(c1) == Chains.sample_matrix(c2)
+end
+
 @testset "filename discovery" begin
     mktempdir() do dir
         base = "foo_"
@@ -125,6 +134,6 @@ end
         for (_, file) in id_files
             touch(file)
         end
-        @test chain_id_files(joinpath(dir, base)) == id_files
+        @test StanCSV.matching_files(joinpath(dir, base)) == id_files
     end
 end
