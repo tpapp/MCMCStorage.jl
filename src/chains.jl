@@ -34,10 +34,14 @@ function Base.view(A::AbstractVector, layout::ColumnLayout)
     end
 end
 
+_dims_string(dims::Tuple{}) = "scalar"
+_dims_string(dims::Tuple{Int}) = "Vector$(dims)"
+_dims_string(dims) = "Array$(dims)"
+
 function Base.show(io::IO, layout::ColumnLayout)
     @unpack offset, len, dims = layout
     printstyled(io, "$((offset+1):(offset+len)) "; color = :light_black)
-    printstyled(io, isempty(dims) ? "scalar" : "array of size $(dims)"; color = :cyan)
+    printstyled(io, _dims_string(dims); color = :cyan)
 end
 
 """
