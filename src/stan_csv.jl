@@ -1,13 +1,31 @@
-#####
-#####
-#####
+"""
+Read CSV-formatted posterior output.
 
+# API
+
+See [`StanCSV.read_chain`](@ref) and [`StanCSV.matching_files`], neither is exported.
+
+# File format
+
+Posterior samples are supposed to be available in a CSV file which follows the following
+conventions:
+
+1. Whitespace and content after `#` is ignored. No fields are quoted or escaped. If a line
+has a `#`, it cannot have content.
+
+2. The first non-ignored line contains a comma-separated list of variable names, of the
+format `var[.i1.i2.…]` where optional indexes follow dots. Indexes for the same variable are
+contiguous, and have a column-major layout.
+
+3. Subsequent lines contain the same number of comma-separated floating-point values.
+
+`cmdstan` outputs posterior samples in this format (diagnostics are ignored for now), hence
+the name.
+"""
 module StanCSV
 
-export read_chain
-
 using ArgCheck: @argcheck
-using DocStringExtensions: SIGNATURES
+using DocStringExtensions: FUNCTIONNAME, SIGNATURES
 import ..Chains
 
 ####
@@ -82,13 +100,20 @@ end
 """
 $(SIGNATURES)
 
+Test if `line` is a comment line.
+"""
+is_comment_line(line) = occursin(r"^ *#", line)
+
+"""
+$(SIGNATURES)
+
 Find the first non-comment line and read it as a `Chains.ColumnSchema`. When there is no
 such line, throw an `EOFError`.
 """
 function read_schema(io::IO)
     while true                  # will throw an EOFError if not fount
         line = readline(io; keep = false)
-        if !occursin(r"^ *#", line)
+        if !is_comment_line(line)
             return parse_schema(parse_variable_name.(split(line, ',')))
         end
     end
@@ -103,13 +128,13 @@ Read `nfields` fields from `io`, parse as `Float64`, and push into `buffer`, ret
 If a line starts with a `'#'`, do no parsing, return `false`.
 """
 function read_csv_line!(buffer, io::IO, nfields::Integer)
-    line = readline(io; keep = true) # treat \n as the last delimiter
-    first(line) == '#' && return false
+    line = readline(io; keep = false)
+    is_comment_line(line) && return false
     pos = 1
     last_pos = lastindex(line)
     for _ in 1:nfields
         @argcheck pos ≤ last_pos "Fewer than $(nfields) fields in line."
-        delim_pos = something(findnext(isequal(','), line, pos), last_pos)
+        delim_pos = something(findnext(isequal(','), line, pos), last_pos + 1)
         push!(buffer, parse(Float64, SubString(line, pos, delim_pos - 1)))
         pos = delim_pos + 1
     end
@@ -150,7 +175,7 @@ Consecutive columns for the same variable name with `n`-dimensional indexes are 
 into an `n+1` dimensional array, with index `var[row, i1, i2, …]` containing the results
 for `var.i1.i2.…` in the given `row`.
 """
-read_chain(filename::AbstractString) = open(read_csv_data, filename, "r")
+read_chain(filename::AbstractString) = open(read_chain, filename, "r")
 
 """
 $(SIGNATURES)
@@ -159,28 +184,28 @@ Return a vector `id::Int => filename` where `filename` is `prefix_<digits>.csv` 
 is a file. Prefix should be a path, eg
 
 ```julia
-chain_id_files("/tmp/samples_")
+$(FUNCTIONNAME)("/tmp/samples_")
 ```
 
 will return `[1 => "/tmp/samples_1.csv", 2 => "/tmp/samples_2.csv", …]` if the files exist.
 
 Recommended use: obtaining all the filenames in a directory.
 """
-function chain_id_files(prefix::AbstractString)
+function matching_files(prefix::AbstractString)
     dir = dirname(prefix)
     base = basename(prefix)
     pattern = Regex("^" * base * raw"(\d+)\.csv$")
-    id_files = Pair{Int,String}[]
+    ids_files = Pair{Int,String}[]
     for filename in readdir(dir)
         m = match(pattern, filename)
         p = joinpath(dir, filename)
         if m ≢ nothing && isfile(p)
-            push!(id_files, parse(Int, m.captures[1]) => p)
+            push!(ids_files, parse(Int, m.captures[1]) => p)
         end
     end
-    @argcheck allunique(first.(id_files)) "Non-unique file ids, perhaps because of 0-padding?"
-    sort!(id_files, by = first)
-    id_files
+    @argcheck allunique(first.(ids_files)) "Non-unique file ids, perhaps because of 0-padding?"
+    sort!(ids_files, by = first)
+    ids_files
 end
 
 end

@@ -34,6 +34,12 @@ function Base.view(A::AbstractVector, layout::ColumnLayout)
     end
 end
 
+function Base.show(io::IO, layout::ColumnLayout)
+    @unpack offset, len, dims = layout
+    print(io, "$((offset+1):(offset+len)) ",
+          isempty(dims) ? "scalar" : "array of size $(dims)")
+end
+
 """
 Type alias for a NamedTuple of array dimensions. Not exported.
 """
@@ -64,6 +70,13 @@ struct ColumnSchema{T}
     function ColumnSchema(named_dims::NamedDims)
         layouts = _column_layouts(named_dims)
         new{typeof(layouts)}(layouts)
+    end
+end
+
+function Base.show(io::IO, cs::ColumnSchema)
+    get(io, :typeinfo, true) && print(io, "Column schema with layouts")
+    for (name, layout) in pairs(layouts(cs))
+        print(io, "\n    ", name, " ", layout)
     end
 end
 
@@ -111,6 +124,14 @@ $(SIGNATURES)
 A `NamedTuple` of `ColumnLayout`s for views into the sample matrix.
 """
 schema(chain::Chain) = chain.schema
+
+function Base.show(io::IO, chain::Chain)
+    @unpack schema, sample_matrix, thinning, warmup, is_ordered = chain
+    print(io, is_ordered ? "Ordered" : "Unordered",
+          " MCMC chain of $(size(sample_matrix, 1)) rows, ")
+    is_ordered && print(io, "of which $(warmup) are warmup, thinning $(thinning)")
+    print(IOContext(io, :typeinfo => false), "with schema", schema)
+end
 
 function sample_matrix(chain::Chain, include_warmup::Val{false})
     @view chain.sample_matrix[(chain.warmup + 1):end, :]
