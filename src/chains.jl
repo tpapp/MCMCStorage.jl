@@ -129,9 +129,9 @@ schema(chain::Chain) = chain.schema
 function Base.show(io::IO, chain::Chain)
     @unpack schema, sample_matrix, thinning, warmup, is_ordered = chain
     print(io, is_ordered ? "Ordered" : "Unordered", " MCMC chain of ")
-    printstyled(io, "$(size(sample_matrix, 1)) rows, "; color = :red)
-    is_ordered && print(io, "of which $(warmup) are warmup, thinning $(thinning)")
-    print(IOContext(io, :typeinfo => false), "with schema", schema)
+    printstyled(io, "$(size(sample_matrix, 1)) rows"; color = :red)
+    is_ordered && print(io, " of which $(warmup) are warmup, thinning $(thinning)")
+    print(IOContext(io, :typeinfo => false), " with schema", schema)
 end
 
 function sample_matrix(chain::Chain, include_warmup::Val{false})
