@@ -9,7 +9,7 @@ using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
 
 @testset "schema, layout, views" begin
     named_dims = (a = (), b = (1, 2), c = (2, 3, 4))
-    s = Chains.ColumnSchema(named_dims)
+    s = Chains.IndexSchema(named_dims)
     l = mapreduce(prod, +, named_dims)
     @test length(s) == l
     v = 1:l
@@ -27,7 +27,7 @@ end
 
 @testset "chains" begin
     sample = Float64.(hcat(1:10, 2:2:20, 3:3:30))
-    sch = Chains.ColumnSchema((a = (), b = (2, )))
+    sch = Chains.IndexSchema((a = (), b = (2, )))
     chain = Chains.Chain(sch, sample; warmup = 3, is_ordered = true, thinning = 2)
     @test Chains.sample_matrix(chain) == sample[4:end, :]
     @test Chains.sample_matrix(chain, Val(true)) == sample
@@ -79,7 +79,7 @@ end
 
 @testset "parsing schema" begin
     nd = (a = (), b = (1, 2), c = (3, 4, 7), d = ())
-    @test parse_schema(make_parsed_header(nd)) == Chains.ColumnSchema(nd)
+    @test parse_schema(make_parsed_header(nd)) == Chains.IndexSchema(nd)
 end
 
 @testset "reading CSV data" begin
@@ -111,7 +111,7 @@ end
     # read test data
     chain = StanCSV.read_chain(IOBuffer(contents))
     sch = Chains.schema(chain)
-    @test sch == Chains.ColumnSchema((a = (), b = (2, ), c = (2, 2)))
+    @test sch == Chains.IndexSchema((a = (), b = (2, ), c = (2, 2)))
     @test chain[:, :a] == Float64.(1:10)
     @test chain[:, :b] == [[i + 1.0, i + 2.0] for i in 1:10]
     @test chain[:, :c] == [(i + 4.0) .+ [1 3; 2 4] for i in 1:10]
@@ -121,7 +121,7 @@ end
     @test_throws(ArgumentError("Fewer than 2 fields in line."),
                  StanCSV.read_chain(IOBuffer("a,b\n1\n2\n")))
     c1 = StanCSV.read_chain(IOBuffer("a,b\n1,2\n"))
-    c2 = Chains.Chain(Chains.ColumnSchema((a = (), b = ())), collect(reshape(1.0:2.0, 1, 2)))
+    c2 = Chains.Chain(Chains.IndexSchema((a = (), b = ())), collect(reshape(1.0:2.0, 1, 2)))
     @test Chains.schema(c1) == Chains.schema(c2)
     @test Chains.sample_matrix(c1) == Chains.sample_matrix(c2)
 end

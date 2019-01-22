@@ -90,7 +90,7 @@ function parse_schema(names_indexes)
         push!(schema, name => dimensions)
         i = next_i
     end
-    Chains.ColumnSchema(NamedTuple{Tuple(first.(schema))}(last.(schema)))
+    Chains.IndexSchema(NamedTuple{Tuple(first.(schema))}(last.(schema)))
 end
 
 ####
@@ -107,7 +107,7 @@ is_comment_line(line) = occursin(r"^ *#", line)
 """
 $(SIGNATURES)
 
-Find the first non-comment line and read it as a `Chains.ColumnSchema`. When there is no
+Find the first non-comment line and read it as a `Chains.IndexSchema`. When there is no
 such line, throw an `EOFError`.
 """
 function read_schema(io::IO)

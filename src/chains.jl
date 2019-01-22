@@ -10,6 +10,9 @@ using DocStringExtensions: FUNCTIONNAME, SIGNATURES, TYPEDEF
 
 """
 $(TYPEDEF)
+
+Allows extraction of a scalar or an array with the given dimension from a vector, starting
+at `offset + 1`.
 """
 struct IndexLayout{D <: Tuple{Vararg{Int}}}
     offset::Int
@@ -91,15 +94,21 @@ end
 #### Column schema
 ####
 
-struct ColumnSchema{T}
+"""
+$(TYPEDEF)
+
+A named, ordered collection of `IndexedLayout`s. `getindex` methods with a symbol use the
+given layout, `:` extracts a `NamedTuple`.
+"""
+struct IndexSchema{T}
     layouts::T
-    function ColumnSchema(named_dims::NamedDims)
+    function IndexSchema(named_dims::NamedDims)
         layouts = _column_layouts(named_dims)
         new{typeof(layouts)}(layouts)
     end
 end
 
-function Base.show(io::IO, cs::ColumnSchema)
+function Base.show(io::IO, cs::IndexSchema)
     get(io, :typeinfo, true) && print(io, "Column schema with layouts")
     for (name, layout) in pairs(layouts(cs))
         printstyled(io, "\n    ", name; color = :blue)
@@ -107,24 +116,24 @@ function Base.show(io::IO, cs::ColumnSchema)
     end
 end
 
-layouts(cs::ColumnSchema) = getfield(cs, :layouts)
+layouts(cs::IndexSchema) = getfield(cs, :layouts)
 
-Base.getproperty(cs::ColumnSchema, name::Symbol) = getfield(layouts(cs), name)
+Base.getproperty(cs::IndexSchema, name::Symbol) = getfield(layouts(cs), name)
 
-Base.propertynames(cs::ColumnSchema) = propertynames(layouts(scs))
+Base.propertynames(cs::IndexSchema) = propertynames(layouts(scs))
 
-function Base.length(cs::ColumnSchema)
+function Base.length(cs::IndexSchema)
     last_layout = layouts(cs)[end]
     last_layout.offset + last_layout.len
 end
 
-function Base.getindex(V::AbstractVector, cs::ColumnSchema)
+function Base.getindex(V::AbstractVector, cs::IndexSchema)
     @argcheck !Base.has_offset_axes(V)
     @argcheck length(cs) == length(V)
     map(layout -> V[layout], layouts(cs))
 end
 
-function Base.getindex(A::AbstractMatrix, row_index, cs::ColumnSchema)
+function Base.getindex(A::AbstractMatrix, row_index, cs::IndexSchema)
     _getindex_stage(A, row_index, cs)
 end
 
@@ -132,7 +141,7 @@ end
 #### Chain
 ####
 
-struct Chain{S <: ColumnSchema, M <: AbstractMatrix}
+struct Chain{S <: IndexSchema, M <: AbstractMatrix}
     schema::S
     sample_matrix::M
     thinning::Int
@@ -140,7 +149,7 @@ struct Chain{S <: ColumnSchema, M <: AbstractMatrix}
     is_ordered::Bool
     function Chain(schema::S, sample_matrix::M;
                    thinning::Int = 1, warmup::Int = 0,
-                   is_ordered::Bool = false) where {S <: ColumnSchema, M <: AbstractMatrix}
+                   is_ordered::Bool = false) where {S <: IndexSchema, M <: AbstractMatrix}
         @argcheck !Base.has_offset_axes(sample_matrix)
         @argcheck length(schema) == size(sample_matrix, 2)
         @argcheck thinning ≥ 1
