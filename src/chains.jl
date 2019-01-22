@@ -127,6 +127,29 @@ function Base.length(cs::IndexSchema)
     last_layout.offset + last_layout.len
 end
 
+"""
+$(SIGNATURES)
+
+Return a vector of `(name, indexes...)` for each index in `IndexSchema`, where
+`indexes == ()` for scalars.
+
+Useful for going back from flat indexes to layouts.
+"""
+function labels(cs::IndexSchema)
+    ret = Vector{Any}(undef, length(cs))
+    for (name, layout) in pairs(layouts(cs))
+        @unpack offset, dims = layout
+        if isempty(dims)
+            ret[offset + 1] = (name, )
+        else
+            for (i, ci) in enumerate(CartesianIndices(map(i -> 1:i, dims)))
+                ret[offset + i] = (name, Tuple(ci)...)
+            end
+        end
+    end
+    ret
+end
+
 function Base.getindex(V::AbstractVector, cs::IndexSchema)
     @argcheck !Base.has_offset_axes(V)
     @argcheck length(cs) == length(V)

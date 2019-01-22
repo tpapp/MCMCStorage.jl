@@ -10,6 +10,10 @@ using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
 @testset "schema, layout, views" begin
     named_dims = (a = (), b = (1, 2), c = (2, 3, 4))
     s = Chains.IndexSchema(named_dims)
+    l = vcat([(:a, )],
+             vec([(:b, Tuple(i)...) for i in CartesianIndices((1:1, 1:2))]),
+             vec([(:c, Tuple(i)...) for i in CartesianIndices((1:2, 1:3, 1:4))]))
+    @test Chains.labels(s) == l
     l = mapreduce(prod, +, named_dims)
     @test length(s) == l
     v = 1:l
