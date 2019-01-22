@@ -2,17 +2,20 @@ module Chains
 
 using ArgCheck: @argcheck
 using Parameters: @unpack
-using DocStringExtensions: FUNCTIONNAME, SIGNATURES
+using DocStringExtensions: FUNCTIONNAME, SIGNATURES, TYPEDEF
 
 ####
-#### Column layouts
+#### Index layouts
 ####
 
-struct ColumnLayout{D <: Tuple{Vararg{Int}}}
+"""
+$(TYPEDEF)
+"""
+struct IndexLayout{D <: Tuple{Vararg{Int}}}
     offset::Int
     len::Int
     dims::D
-    function ColumnLayout(offset, len, dims::D) where D
+    function IndexLayout(offset, len, dims::D) where D
         @argcheck offset ≥ 0
         @argcheck len > 0
         @argcheck prod(dims) == len
@@ -20,12 +23,7 @@ struct ColumnLayout{D <: Tuple{Vararg{Int}}}
     end
 end
 
-function Base.view(A::AbstractMatrix, layout::ColumnLayout)
-    @unpack offset, len, dims = layout
-    reshape(view(A, Colon(), offset .+ (1:len)), (size(A, 1), dims...))
-end
-
-function Base.view(A::AbstractVector, layout::ColumnLayout)
+function Base.getindex(A::AbstractVector, layout::IndexLayout)
     @unpack offset, len, dims = layout
     if isempty(dims)
         A[offset + 1]
@@ -34,11 +32,35 @@ function Base.view(A::AbstractVector, layout::ColumnLayout)
     end
 end
 
+function _getindex_stage(A, row_index, col_index)
+    ix, _ = to_indices(A, (row_index, Colon()))
+    if ix isa Integer
+        A[ix, :][col_index]
+    else
+        map(row -> row[col_index], eachrow(view(A, ix, :)))
+    end
+end
+
+function Base.getindex(A::AbstractMatrix, row_index, layout::IndexLayout)
+    _getindex_stage(A, row_index, layout)
+end
+
+# optimized case for scalar layouts
+function Base.getindex(A::AbstractMatrix, row_index, layout::IndexLayout{Tuple{}})
+    col_index = layout.offset + 1
+    ix, _ = to_indices(A, (row_index, Colon()))
+    if ix isa Integer
+        A[ix, col_index]
+    else
+        view(A, ix, col_index)
+    end
+end
+
 _dims_string(dims::Tuple{}) = "scalar"
-_dims_string(dims::Tuple{Int}) = "Vector$(dims)"
+_dims_string(dims::Tuple{Int}) = "Vector($(first(dims)))"
 _dims_string(dims) = "Array$(dims)"
 
-function Base.show(io::IO, layout::ColumnLayout)
+function Base.show(io::IO, layout::IndexLayout)
     @unpack offset, len, dims = layout
     printstyled(io, "$((offset+1):(offset+len)) "; color = :light_black)
     printstyled(io, _dims_string(dims); color = :cyan)
@@ -58,7 +80,7 @@ function _column_layouts(named_dims::NamedDims)
     acc = 0
     layouts = map(named_dims) do dims
         len = prod(dims)
-        layout = ColumnLayout(acc, len, dims)
+        layout = IndexLayout(acc, len, dims)
         acc += len
         layout
     end
@@ -96,10 +118,14 @@ function Base.length(cs::ColumnSchema)
     last_layout.offset + last_layout.len
 end
 
-function Base.view(x::Union{AbstractVector, AbstractMatrix}, cs::ColumnSchema)
-    @argcheck !Base.has_offset_axes(x)
-    @argcheck length(cs) == size(x, ndims(x))
-    map(layout -> view(x, layout), layouts(cs))
+function Base.getindex(V::AbstractVector, cs::ColumnSchema)
+    @argcheck !Base.has_offset_axes(V)
+    @argcheck length(cs) == length(V)
+    map(layout -> V[layout], layouts(cs))
+end
+
+function Base.getindex(A::AbstractMatrix, row_index, cs::ColumnSchema)
+    _getindex_stage(A, row_index, cs)
 end
 
 ####
@@ -126,7 +152,7 @@ end
 """
 $(SIGNATURES)
 
-A `NamedTuple` of `ColumnLayout`s for views into the sample matrix.
+A `NamedTuple` of `IndexLayout`s for views into the sample matrix.
 """
 schema(chain::Chain) = chain.schema
 
@@ -183,14 +209,14 @@ function Base.vcat(chain1::Chain, chains::Chain...)
           thinning = 1, is_ordered = false, warmup = 0)
 end
 
-"""
-$(SIGNATURES)
-
-Return a generator that returns named tuples from the posterior (not including the warmup).
-"""
-function posterior(c::Chain)
-    sch = schema(c)
-    (view(row, sch) for row in eachrow(sample_matrix(c)))
+function Base.getindex(chain::Chain, row_index, name::Symbol)
+    getindex(sample_matrix(chain), row_index, getproperty(schema(chain), name))
 end
+
+function Base.getindex(chain::Chain, row_index, ::Colon)
+    getindex(sample_matrix(chain), row_index, schema(chain))
+end
+
+Base.eachcol(chain::Chain) = eachcol(sample_matrix(chain))
 
 end

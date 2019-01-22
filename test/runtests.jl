@@ -14,14 +14,15 @@ using MCMCStorage.StanCSV: parse_variable_name, collapse_contiguous_dimensions,
     @test length(s) == l
     v = 1:l
     m = reshape(v, 1, :)
-    @test view(v, s.a) == 1
-    @test view(v, s.b) == reshape(2:3, 1, 2)
-    @test view(v, s.c) == reshape(4:l, 2, 3, 4)
-    @test view(v, s) == (a = view(v, s.a), b = view(v, s.b), c = view(v, s.c))
-    @test view(m, s.a) == [1]
-    @test view(m, s.b) == reshape(2:3, 1, 1, 2)
-    @test view(m, s.c) == reshape(4:l, 1, 2, 3, 4)
-    @test view(m, s) == (a = view(m, s.a), b = view(m, s.b), c = view(m, s.c))
+    @test v[s.a] == 1
+    @test v[s.b] == reshape(2:3, 1, 2)
+    @test v[s.c] == reshape(4:l, 2, 3, 4)
+    @test v[s] == (a = v[s.a], b = v[s.b], c = v[s.c])
+    @test m[:, s.a] == [1]
+    @test m[:, s.b] == [reshape(2:3, 1, 2)]
+    @test m[:, s.c] == [reshape(4:l, 2, 3, 4)]
+    @test m[1, s] == (a = m[1, s.a], b = m[1, s.b], c = m[1, s.c])
+    @test m[:, s] == [(a = m[1, s.a], b = m[1, s.b], c = m[1, s.c])]
 end
 
 @testset "chains" begin
@@ -32,8 +33,10 @@ end
     @test Chains.sample_matrix(chain, Val(true)) == sample
     @test Chains.thinning(chain) == 2
     @test Chains.warmup(chain) == 3
-    p = collect(Chains.posterior(chain))
-    @test p == [(f = Float64(i); (a = i, b = [2*i, 3*i])) for i in 4:10]
+    p = [(f = Float64(i); (a = i, b = [2*i, 3*i])) for i in 4:10]
+    @test collect(chain[:, :]) == p
+    @test collect(chain[:, :a]) == map(x -> x.a, p)
+    @test collect(chain[:, :b]) == map(x -> x.b, p)
     c2 = vcat(chain, chain)
     @test Chains.sample_matrix(c2) == vcat(sample[4:end, :], sample[4:end, :])
     @test Chains.warmup(c2) == 0
@@ -109,13 +112,9 @@ end
     chain = StanCSV.read_chain(IOBuffer(contents))
     sch = Chains.schema(chain)
     @test sch == Chains.ColumnSchema((a = (), b = (2, ), c = (2, 2)))
-    s = Chains.sample_matrix(chain)
-    @test view(s, sch.a) == Float64.(1:10)
-    @test view(s, sch.b) == Float64.(hcat(2:11, 3:12))
-    c = view(s, sch.c)
-    for i in 1:10
-        @test c[i, :, :] == reshape(1:4, 2, 2) .+ 4.0 .+ i
-    end
+    @test chain[:, :a] == Float64.(1:10)
+    @test chain[:, :b] == [[i + 1.0, i + 2.0] for i in 1:10]
+    @test chain[:, :c] == [(i + 4.0) .+ [1 3; 2 4] for i in 1:10]
 end
 
 @testset "corner cases" begin
