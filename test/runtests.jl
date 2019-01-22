@@ -33,6 +33,7 @@ end
     sample = Float64.(hcat(1:10, 2:2:20, 3:3:30))
     sch = Chains.IndexSchema((a = (), b = (2, )))
     chain = Chains.Chain(sch, sample; warmup = 3, is_ordered = true, thinning = 2)
+    @test Chains.labels(sch) == Chains.labels(chain)
     @test Chains.sample_matrix(chain) == sample[4:end, :]
     @test Chains.sample_matrix(chain, Val(true)) == sample
     @test Chains.thinning(chain) == 2

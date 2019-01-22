@@ -188,6 +188,8 @@ A `NamedTuple` of `IndexLayout`s for views into the sample matrix.
 """
 schema(chain::Chain) = chain.schema
 
+labels(chain::Chain) = labels(schema(chain))
+
 function Base.show(io::IO, chain::Chain)
     @unpack schema, sample_matrix, thinning, warmup, is_ordered = chain
     print(io, is_ordered ? "Ordered" : "Unordered", " MCMC chain of ")
